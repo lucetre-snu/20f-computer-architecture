@@ -88,7 +88,7 @@ uint32_t test1[N] =	{0x00000000, 0x00000001, 0x000007e4, 0xffffff9b, 0x7fffffff,
 uint16_t ans1[N] =	{0x0000, 0x03e0, 0x053f, 0xfcb2, 0x07c0, 0xffc0};
 
 /* fp12 -> int */
-uint16_t test2[N] =	{0xf800, 0x04d6, 0x044c, 0xf81f, 0x07e0, 0x7fff};
+uint16_t test2[N] =	{0xf800, 0x04d6, 0x044c, 0xf81f, 0x07e0, 0xffff};
 uint32_t ans2[N] =	{0x00000000, 0x000000d8, 0x0000000b, 0x00000000, 0x80000000, 0x80000000};
 
 /* float -> fp12 */
@@ -145,6 +145,7 @@ int main(void)
 		printf("\n");
 	}
 
+    
 	printf("\n%sTest 4: Casting from fp12 to float%s\n", CYAN, RESET);
 	for (int i = 0; i < N; i++) {
 		float f = fp12_float(test4[i]);
