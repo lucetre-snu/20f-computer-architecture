@@ -145,7 +145,6 @@ int main(void)
 		printf("\n");
 	}
 
-    
 	printf("\n%sTest 4: Casting from fp12 to float%s\n", CYAN, RESET);
 	for (int i = 0; i < N; i++) {
 		float f = fp12_float(test4[i]);
