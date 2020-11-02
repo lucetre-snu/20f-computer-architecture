@@ -1,0 +1,5 @@
+riscv32-unknown-elf-gcc -Ofast -c test.c
+riscv32-unknown-elf-objdump -d test.o
+riscv32-unknown-elf-objdump -ds test.o > test.s
+gcc test.c pa1-sol.c pa1-test.c main.c -o main
+./main
