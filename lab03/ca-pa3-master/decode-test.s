@@ -20,21 +20,21 @@
 
 	.globl	test
 test:
-#	.word	test0
-#	.word	test1
+	.word	test0
+	.word	test1
 	.word	test2
-#	.word	test3
-#	.word	test4
-#	.word	test5
+	.word	test3
+	.word	test4
+	.word	test5
 
 	.globl	ans
 ans:
-#	.word	ans0
-#	.word	ans1
+	.word	ans0
+	.word	ans1
 	.word	ans2
-#	.word	ans3
-#	.word	ans4
-#	.word	ans5
+	.word	ans3
+	.word	ans4
+	.word	ans5
 
 test0:
 	.word	0x00000007
