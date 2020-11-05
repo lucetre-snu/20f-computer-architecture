@@ -60,7 +60,7 @@ main:
 
 	addi	sp, sp, -0x100
 	mv	t0, zero
-	li	t1, 6
+	li	t1, 1
 	la	t2, test
 	la	t3, ans
 	mv	t6, zero

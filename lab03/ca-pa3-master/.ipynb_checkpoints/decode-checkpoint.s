@@ -147,28 +147,22 @@ decode:
     slli	a2,a2,28
     and		a2,a1,a2
     srli	a2,a2,28
-    addi	a2,a2,-4
-    bge		zero,a2,else0
-    addi	a2,a2,-4
-    lw		a1,-4(sp)	# load inNibbles
-    addi	a1,a1,-1
-    sw		a1,-4(sp)	# store inNibbles
-else0:
-    addi	a2,a2,4
+    
     sw		a2,-24(sp)	# padding > local
     sw		zero,-48(sp)# output a5
     sw		zero,-44(sp)# outlen a5
-    li		a3,9		# inNibbles
+    li		a3,8		# inNibbles 9 to 8
     slli	a4,a0,4		# stream > local
-    li		a1,0		# lenBit
+    srli	a4,a4,4		# stream
+    li		a1,-4		# lenBit
     li		a0,0		# body
     loop3:
-        addi	a3,a3,1
-        slli	a0,a0,4
-        srli	a5,a4,28
+        addi	a3,a3,4		# 1 to 4
+        slli	a0,a0,16	# 4 to 16
+        srli	a5,a4,16	# 28 to 16
         add		a0,a0,a5
-        slli	a4,a4,4
-        addi	a1,a1,4
+        slli	a4,a4,16	# 4 to 16
+        addi	a1,a1,16	# 4 to 16
         and		a5,a3,7
         bnez	a5,cont3 # nothing to read from stream
         
@@ -186,16 +180,17 @@ else0:
         lw		a1,-32(sp)	# a1
     cont3:
         lw		a5,-4(sp)	# load a5(inNibbles)
-        addi	a5,a5,1
         bgt		a5,a3,huff    
         
         # final nibble
-        
         lw		a2,-24(sp)	# padding
+        sub		a5,a3,a5
+        addi	a5,a5,-1
+        slli	a5,a5,2
+        add		a2,a5,a2
         
         srl		a0,a0,a2
         sub		a1,a1,a2
-        li		a4,0
         
         huff:
             lw		a5,-48(sp)	# load a5(output)
@@ -219,7 +214,6 @@ else0:
                 slli	a5,a5,4
                 add		a5,a5,a2
                 sw		a5,-48(sp)	# store a5(output)
-                
                 lw		a5,-44(sp)	# load a5(outlen)
                 lw		ra,-12(sp)	# load outNibbles
                 bge		ra,a5,continueZ
@@ -232,7 +226,6 @@ else0:
                 sw		a5,-44(sp)	# store a5(outlen)
                 
                 bnez	a2,elseZ
-                
                 call		store
                 elseZ:
                 j		huff
