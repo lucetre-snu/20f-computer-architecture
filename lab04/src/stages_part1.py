@@ -87,11 +87,11 @@ class IF(Pipe):
 
         # Internal signals:----------------------------
         #
-        #   self.pc                 # Pipe.ID.pc
-        #   self.inst               # Pipe.ID.inst
-        #   self.exception          # Pipe.ID.exception
-        #   self.pc_next            # Pipe.ID.pc_next
-        #   self.pcplus4            # Pipe.ID.pcplus4
+        #   self.pc                 # Pipe.IF.pc
+        #   self.inst               # Pipe.IF.inst
+        #   self.exception          # Pipe.IF.exception
+        #   self.pc_next            # Pipe.IF.pc_next
+        #   self.pcplus4            # Pipe.IF.pcplus4
         #
         #----------------------------------------------
 
@@ -116,17 +116,30 @@ class IF(Pipe):
         # Compute PC + 4 using an adder
         self.pcplus4    = Pipe.cpu.adder_pcplus4.op(self.pc, 4)
 
-        self.pc_next    = self.pcplus4  if Pipe.ID.pc_sel == PC_4       else \
-                          WORD(0)
+        # Select next PC
+        self.pc_next =  self.pcplus4            if Pipe.ID.pc_sel == PC_4      else \
+                        Pipe.EX.brjmp_target    if Pipe.ID.pc_sel == PC_BRJMP  else \
+                        Pipe.EX.jump_reg_target if Pipe.ID.pc_sel == PC_JALR   else \
+                        WORD(0)                 
+
 
 
     def update(self):
-          
-        IF.reg_pc         = self.pc_next
-
-        ID.reg_pc         = self.pc
-        ID.reg_inst       = self.inst
-        ID.reg_exception  = self.exception
+        if not Pipe.ID.IF_stall:
+            IF.reg_pc         = self.pc_next       
+            
+        if Pipe.ID.ID_bubble:
+            ID.reg_pc           = self.pc
+            ID.reg_inst         = WORD(BUBBLE)
+            ID.reg_exception    = WORD(EXC_NONE)
+            ID.reg_pcplus4      = WORD(0)
+        elif not Pipe.ID.ID_stall:
+            ID.reg_pc         = self.pc
+            ID.reg_inst       = self.inst
+            ID.reg_exception  = self.exception
+            ID.reg_pcplus4    = self.pcplus4
+        else:
+            pass
 
         # DO NOT TOUCH -----------------------------------------------
         Pipe.log(S_IF, self.pc, self.inst, self.log())
@@ -151,6 +164,7 @@ class ID(Pipe):
     reg_pc          = WORD(0)           # ID.reg_pc
     reg_inst        = WORD(BUBBLE)      # ID.reg_inst
     reg_exception   = WORD(EXC_NONE)    # ID.reg_exception
+    reg_pcplus4     = WORD(0)           # RR.reg_pcplus4
 
     #--------------------------------------------------
 
@@ -191,6 +205,7 @@ class ID(Pipe):
         self.pc         = ID.reg_pc
         self.inst       = ID.reg_inst
         self.exception  = ID.reg_exception
+        self.pcplus4    = ID.reg_pcplus4
 
         self.rs1        = RISCV.rs1(self.inst)
         self.rs2        = RISCV.rs2(self.inst)
@@ -201,9 +216,15 @@ class ID(Pipe):
         imm_b           = RISCV.imm_b(self.inst)
         imm_u           = RISCV.imm_u(self.inst)
         imm_j           = RISCV.imm_j(self.inst)
+        
+        self.IF_stall       = False
+        self.ID_stall       = False
+        self.ID_bubble      = False
+        self.RR_bubble      = False
+        self.EX_bubble      = False
+        self.MM_bubble      = False     
 
-
-        # Generate control signals
+        # Generate control signals        
 
         # DO NOT TOUCH------------------------------------------------
         opcode          = RISCV.opcode(self.inst)
@@ -238,22 +259,58 @@ class ID(Pipe):
                           imm_u         if self.c_op2_sel == OP2_IMU      else \
                           imm_j         if self.c_op2_sel == OP2_IMJ      else \
                           WORD(0)
-
+    
+   
         # Control signal to select the next PC
-        self.pc_sel     = PC_4
-       
+        self.pc_sel         =   PC_BRJMP    if (EX.reg_c_br_type == BR_NE  and (not Pipe.EX.alu_out)) or    \
+                                               (EX.reg_c_br_type == BR_EQ  and Pipe.EX.alu_out) or          \
+                                               (EX.reg_c_br_type == BR_GE  and (not Pipe.EX.alu_out)) or    \
+                                               (EX.reg_c_br_type == BR_GEU and (not Pipe.EX.alu_out)) or    \
+                                               (EX.reg_c_br_type == BR_LT  and Pipe.EX.alu_out) or          \
+                                               (EX.reg_c_br_type == BR_LTU and Pipe.EX.alu_out) or          \
+                                               (EX.reg_c_br_type == BR_J) else                              \
+                                PC_JALR     if  EX.reg_c_br_type == BR_JR else                              \
+                                PC_4
+        
+        # Check for load-use data hazard
+        RR_load_inst = RR.reg_c_dmem_en and RR.reg_c_dmem_rw == M_XRD
+        load_use_hazard     = (RR_load_inst and RR.reg_rd != 0) and             \
+                              ((RR.reg_rd == self.rs1 and self.c_rs1_oen) or    \
+                               (RR.reg_rd == self.rs2 and self.c_rs2_oen))
+        
+        RR_brjmp            = self.pc_sel != PC_4
+        
+        self.IF_stall       = load_use_hazard and not RR_brjmp
+        self.ID_stall       = load_use_hazard 
+        self.ID_bubble      = RR_brjmp
+        self.RR_bubble      = load_use_hazard or RR_brjmp
+        self.EX_bubble      = RR_brjmp
 
     def update(self):
-
         RR.reg_pc               = self.pc
-        RR.reg_inst             = self.inst
-        RR.reg_exception        = self.exception
-        RR.reg_rs1              = self.rs1
-        RR.reg_rs2              = self.rs2
-        RR.reg_rd               = self.rd
-        RR.reg_imm              = self.imm
-        RR.reg_c_alu_fun        = self.c_alu_fun
-        RR.reg_c_rf_wen         = self.c_rf_wen         
+        
+        if self.RR_bubble:
+            RR.reg_inst             = WORD(BUBBLE)
+            RR.reg_exception        = WORD(EXC_NONE)
+            RR.reg_c_br_type        = WORD(BR_N)
+            RR.reg_c_rf_wen         = False
+            RR.reg_c_dmem_en        = False
+        else:
+            RR.reg_inst             = self.inst
+            RR.reg_exception        = self.exception
+            RR.reg_rs1              = self.rs1
+            RR.reg_rs2              = self.rs2
+            RR.reg_rd               = self.rd
+            RR.reg_imm              = self.imm
+            RR.reg_pcplus4          = self.pcplus4
+            RR.reg_c_br_type        = self.c_br_type
+            RR.reg_c_alu_fun        = self.c_alu_fun
+            RR.reg_c_wb_sel         = self.c_wb_sel
+            RR.reg_c_rf_wen         = self.c_rf_wen
+            RR.reg_c_dmem_en        = self.c_dmem_en
+            RR.reg_c_dmem_rw        = self.c_dmem_rw  
+            RR.reg_c_op1_sel        = self.c_op1_sel      
+            RR.reg_c_op2_sel        = self.c_op2_sel        
 
         # DO NOT TOUCH -----------------------------------------------
         Pipe.log(S_ID, self.pc, self.inst, self.log())
@@ -285,8 +342,15 @@ class RR(Pipe):
     reg_rs2             = WORD(0)           # RR.reg_rs2
     reg_rd              = WORD(0)           # RR.reg_rd
     reg_imm             = WORD(0)           # RR.reg_imm
+    reg_pcplus4         = WORD(0)           # RR.reg_pcplus4
+    reg_c_br_type       = WORD(BR_N)        # RR.reg_c_br_type
     reg_c_alu_fun       = WORD(ALU_X)       # RR.reg_c_alu_fun
     reg_c_rf_wen        = WORD(REN_0)       # RR.reg_c_rf_wen
+    reg_c_wb_sel        = WORD(WB_X)        # EX.reg_c_wb_sel
+    reg_c_dmem_en       = False             # EX.reg_c_dmem_en
+    reg_c_dmem_rw       = WORD(M_X)         # EX.reg_c_dmem_rw
+    reg_c_op1_sel       = False
+    reg_c_op2_sel       = False
 
     #--------------------------------------------------
 
@@ -321,25 +385,110 @@ class RR(Pipe):
         self.rs2        = RR.reg_rs2
         self.rd         = RR.reg_rd
         self.imm        = RR.reg_imm
+        self.pcplus4    = RR.reg_pcplus4
+        self.c_br_type  = RR.reg_c_br_type
         self.c_alu_fun  = RR.reg_c_alu_fun
         self.c_rf_wen   = RR.reg_c_rf_wen
-
-        
+        self.c_wb_sel   = RR.reg_c_wb_sel
+        self.c_dmem_en  = RR.reg_c_dmem_en
+        self.c_dmem_rw  = RR.reg_c_dmem_rw
+        self.c_op1_sel  = RR.reg_c_op1_sel
+        self.c_op2_sel  = RR.reg_c_op2_sel
+    
+            
+        rf_rs1_data     = Pipe.cpu.rf.read(self.rs1)
+        rf_rs2_data     = Pipe.cpu.rf.read(self.rs2)
+            
         # Read register file
-        self.op1_data   = Pipe.cpu.rf.read(self.rs1)
-        self.op2_data   = Pipe.cpu.rf.read(self.rs2)
+        self.op1_data   = rf_rs1_data
+        
+        if self.reg_c_op2_sel == OP2_RS2:
+            self.op2_data   = rf_rs2_data
+        else:
+            self.op2_data   = self.imm 
+    
+    
+        # Control signal for forwarding rs1 value to op1_data
+        # The c_rf_wen signal can be disabled when we have an exception during dmem access,
+        # so Pipe.MM.c_rf_wen should be used instead of MM.reg_c_rf_wen.
+        self.fwd_op1        =   FWD_EX      if (EX.reg_rd == self.rs1) and               \
+                                               (EX.reg_rd != 0) and EX.reg_c_rf_wen else \
+                                FWD_MM      if (MM.reg_rd == self.rs1) and               \
+                                               (MM.reg_rd != 0) and MM.reg_c_rf_wen else \
+                                FWD_WB      if (WB.reg_rd == self.rs1) and               \
+                                               (WB.reg_rd != 0) and WB.reg_c_rf_wen else \
+                                FWD_NONE
 
+#         # Control signal for forwarding rs2 value to op2_data
+        self.fwd_op2        =   FWD_EX      if (EX.reg_rd == self.rs2) and               \
+                                               (EX.reg_rd != 0) and EX.reg_c_rf_wen and  \
+                                               self.c_op2_sel == OP2_RS2 else            \
+                                FWD_MM      if (MM.reg_rd == self.rs2) and               \
+                                               (MM.reg_rd != 0) and MM.reg_c_rf_wen and  \
+                                               self.c_op2_sel == OP2_RS2 else            \
+                                FWD_WB      if (WB.reg_rd == self.rs2) and               \
+                                               (WB.reg_rd != 0) and WB.reg_c_rf_wen and  \
+                                               self.c_op2_sel == OP2_RS2 else            \
+                                FWD_NONE
+    
+        # Control signal for forwarding rs2 value to rs2_data
+        self.fwd_rs2        =   FWD_EX      if (EX.reg_rd == self.rs2) and                \
+                                               (EX.reg_rd != 0) and EX.reg_c_rf_wen  else \
+                                FWD_MM      if (MM.reg_rd == self.rs2) and                \
+                                               (MM.reg_rd != 0) and MM.reg_c_rf_wen  else \
+                                FWD_WB      if (WB.reg_rd == self.rs2) and                \
+                                               (WB.reg_rd != 0) and WB.reg_c_rf_wen  else \
+                                FWD_NONE
+    
 
+#         # Determine ALU operand 1: PC or R[rs1]
+#         # Get forwarded value for rs1 if necessary
+#         # The order matters: EX -> MM -> WB (forwarding from the closest stage)
+        self.op1_data = self.pc         if self.c_op1_sel == OP1_PC       else \
+                        Pipe.EX.alu_out if self.fwd_op1 == FWD_EX       else \
+                        Pipe.MM.wbdata  if self.fwd_op1 == FWD_MM       else \
+                        Pipe.WB.wbdata  if self.fwd_op1 == FWD_WB       else \
+                        self.op1_data
+
+#         # Get forwarded value for rs2 if necessary
+#         # The order matters: EX -> MM -> WB (forwarding from the closest stage)
+        self.op2_data = Pipe.EX.alu_out if self.fwd_op2 == FWD_EX       else \
+                        Pipe.MM.wbdata  if self.fwd_op2 == FWD_MM       else \
+                        Pipe.WB.wbdata  if self.fwd_op2 == FWD_WB       else \
+                        self.op2_data
+    
+
+#         # Get forwarded value for rs2 if necessary
+#         # The order matters: EX -> MM -> WB (forwarding from the closest stage)
+        self.rs2_data = Pipe.EX.alu_out if self.fwd_rs2 == FWD_EX       else \
+                        Pipe.MM.wbdata  if self.fwd_rs2 == FWD_MM       else \
+                        Pipe.WB.wbdata  if self.fwd_rs2 == FWD_WB       else \
+                        rf_rs2_data
+    
+    
+    
     def update(self):
-
         EX.reg_pc               = self.pc
-        EX.reg_inst             = self.inst
-        EX.reg_exception        = self.exception
-        EX.reg_rd               = self.rd
-        EX.reg_op1_data         = self.op1_data
-        EX.reg_op2_data         = self.op2_data
-        EX.reg_c_alu_fun        = self.c_alu_fun
-        EX.reg_c_rf_wen         = self.c_rf_wen         
+        if Pipe.ID.EX_bubble:
+            EX.reg_inst             = WORD(BUBBLE)
+            EX.reg_exception        = WORD(EXC_NONE)
+            EX.reg_c_br_type        = WORD(BR_N)
+            EX.reg_c_rf_wen         = False
+            EX.reg_c_dmem_en        = False
+        else:
+            EX.reg_inst             = self.inst
+            EX.reg_exception        = self.exception
+            EX.reg_rd               = self.rd
+            EX.reg_op1_data         = self.op1_data
+            EX.reg_op2_data         = self.op2_data
+            EX.reg_rs2_data         = self.rs2_data
+            EX.reg_pcplus4          = self.pcplus4
+            EX.reg_c_br_type        = self.c_br_type
+            EX.reg_c_alu_fun        = self.c_alu_fun
+            EX.reg_c_wb_sel         = self.c_wb_sel
+            EX.reg_c_rf_wen         = self.c_rf_wen 
+            EX.reg_c_dmem_en        = self.c_dmem_en
+            EX.reg_c_dmem_rw        = self.c_dmem_rw        
 
         # DO NOT TOUCH -----------------------------------------------
         Pipe.log(S_RR, self.pc, self.inst, self.log())
@@ -369,8 +518,14 @@ class EX(Pipe):
     reg_rd              = WORD(0)           # EX.reg_rd
     reg_op1_data        = WORD(0)           # EX.reg_op1_data
     reg_op2_data        = WORD(0)           # EX.reg_op2_data
+    reg_rs2_data        = WORD(0)           # EX.reg_rs2_data
+    reg_c_br_type       = WORD(BR_N)        # RR.reg_c_br_type
     reg_c_rf_wen        = False             # EX.reg_c_rf_wen
+    reg_c_wb_sel        = WORD(WB_X)        # MM.reg_c_wb_sel
+    reg_c_dmem_en       = False             # MM.reg_c_dmem_en
+    reg_c_dmem_rw       = WORD(M_X)         # MM.reg_c_dmem_rw
     reg_c_alu_fun       = WORD(ALU_X)       # EX.reg_c_alu_fun
+    reg_pcplus4         = WORD(0)           # EX.reg_pcplus4
 
     #--------------------------------------------------
 
@@ -401,32 +556,54 @@ class EX(Pipe):
         self.inst               = EX.reg_inst
         self.exception          = EX.reg_exception
         self.rd                 = EX.reg_rd
+        self.c_br_type          = EX.reg_c_br_type
         self.c_rf_wen           = EX.reg_c_rf_wen
+        self.c_wb_sel           = EX.reg_c_wb_sel
+        self.c_dmem_en          = EX.reg_c_dmem_en
+        self.c_dmem_rw          = EX.reg_c_dmem_rw
         self.c_alu_fun          = EX.reg_c_alu_fun
         self.op1_data           = EX.reg_op1_data
         self.op2_data           = EX.reg_op2_data
+        self.rs2_data           = EX.reg_rs2_data
+        self.pcplus4            = EX.reg_pcplus4
 
         # The second input to ALU should be put into self.alu2_data for correct log msg.
-        self.alu2_data          = self.op2_data
+        self.alu2_data  = self.rs2_data     if self.c_br_type in [ BR_NE, BR_EQ, BR_GE, BR_GEU, BR_LT, BR_LTU ] else \
+                          self.op2_data
 
         # Perform ALU operation
         self.alu_out = Pipe.cpu.alu.op(self.c_alu_fun, self.op1_data, self.alu2_data)
 
+        
+        # Adjust the output for jalr instruction (forwarded to IF)
+        self.jump_reg_target    = self.alu_out & WORD(0xfffffffe) 
+
+        # Calculate the branch/jump target address using an adder (forwarded to IF)
+        self.brjmp_target       = Pipe.cpu.adder_brtarget.op(self.pc, self.op2_data) 
+
+        # For jal and jalr instructions, pc+4 should be written to the rd
+        if self.c_wb_sel == WB_PC4:                   
+            self.alu_out        = self.pcplus4
+        
+        
 
     def update(self):
-
         MM.reg_pc               = self.pc
         MM.reg_exception        = self.exception
 
         if Pipe.ID.MM_bubble:
             MM.reg_inst         = WORD(BUBBLE)
             MM.reg_c_rf_wen     = False
+            MM.reg_c_dmem_en    = False
         else:
             MM.reg_inst         = self.inst
             MM.reg_rd           = self.rd
             MM.reg_c_rf_wen     = self.c_rf_wen
+            MM.reg_c_wb_sel     = self.c_wb_sel
+            MM.reg_c_dmem_en    = self.c_dmem_en
+            MM.reg_c_dmem_rw    = self.c_dmem_rw
             MM.reg_alu_out      = self.alu_out
-
+            MM.reg_rs2_data     = self.rs2_data
 
         # DO NOT TOUCH -----------------------------------------------
         Pipe.log(S_EX, self.pc, self.inst, self.log())
@@ -469,7 +646,12 @@ class MM(Pipe):
     reg_exception       = WORD(EXC_NONE)    # MM.reg_exception
     reg_rd              = WORD(0)           # MM.reg_rd
     reg_c_rf_wen        = False             # MM.reg_c_rf_wen
+    reg_c_wb_sel        = WORD(WB_X)        # MM.reg_c_wb_sel
+    reg_c_dmem_en       = False             # MM.reg_c_dmem_en
+    reg_c_dmem_rw       = WORD(M_X)         # MM.reg_c_dmem_rw
     reg_alu_out         = WORD(0)           # MM.reg_alu_out
+    reg_rs2_data        = WORD(0)           # MM.reg_rs2_data
+
 
     #--------------------------------------------------
 
@@ -495,19 +677,32 @@ class MM(Pipe):
         self.exception      = MM.reg_exception
         self.rd             = MM.reg_rd
         self.c_rf_wen       = MM.reg_c_rf_wen
+        self.c_wb_sel       = MM.reg_c_wb_sel
+        self.c_dmem_en      = MM.reg_c_dmem_en
+        self.c_dmem_rw      = MM.reg_c_dmem_rw
         self.alu_out        = MM.reg_alu_out  
+        self.rs2_data       = MM.reg_rs2_data 
 
-        # Nothing to do for now
+        
+        # Access data memory (dmem) if needed
+        self.mem_data, status = Pipe.cpu.dmem.access(self.c_dmem_en, self.alu_out, self.rs2_data, self.c_dmem_rw)
 
-        # The value to be written into the register file should be put into self.wbdata for logging
-        self.wbdata         = self.alu_out
+        # Handle exception during dmem access
+        if not status:
+            self.exception |= EXC_DMEM_ERROR
+            self.c_rf_wen   = False
+
+        # For load instruction, we need to store the value read from dmem
+        self.wbdata         = self.mem_data          if self.c_wb_sel == WB_MEM  else \
+                              self.alu_out  
     
 
     def update(self):
-        
+
         WB.reg_pc           = self.pc
         WB.reg_inst         = self.inst
         WB.reg_exception    = self.exception
+        WB.reg_rd           = self.rd
         WB.reg_c_rf_wen     = self.c_rf_wen
         WB.reg_wbdata       = self.wbdata
 
@@ -518,10 +713,12 @@ class MM(Pipe):
     
     # DO NOT TOUCH ---------------------------------------------------
     def log(self):
-        if not self.c_rf_wen:
+        if not self.c_dmem_en:
             return('# -')
+        elif self.c_dmem_rw == M_XRD:
+            return('# 0x%08x <- M[0x%08x]' % (self.wbdata, self.alu_out))
         else:
-            return('# rd=%d wbdata=0x%08x' % (self.rd, self.wbdata))
+            return('# M[0x%08x] <- 0x%08x' % (self.alu_out, self.rs2_data))
     #-----------------------------------------------------------------
 
 
@@ -570,7 +767,6 @@ class WB(Pipe):
 
 
     def update(self):
-    
         if self.c_rf_wen:
             Pipe.cpu.rf.write(self.rd, self.wbdata)
 

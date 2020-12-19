@@ -11,5 +11,5 @@ Disassembly of section .text:
 8000000c:	00af8f93          	addi	t6,t6,10
 80000010:	0002af83          	lw	t6,0(t0)
 80000014:	ffff8f93          	addi	t6,t6,-1
-80000018:	ffff8f93          	addi	t6,t6,-1
+80000018:	ffef8f93          	addi	t6,t6,-2
 8000001c:	00100073          	ebreak

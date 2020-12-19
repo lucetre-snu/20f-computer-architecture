@@ -36,7 +36,6 @@ fib:
     sw      ra, 12(sp)          # save ra register
     sw      s0, 8(sp)           # save s0 register
     sw      s1, 4(sp)           # save s1 register
-
     mv      s0, a0              # s0 <- n
     addi    a0, a0, -1          # a0 <- n - 1
     call    fib                 # call fib(n-1)

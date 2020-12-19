@@ -2,7 +2,7 @@
 #
 #   The PyRISC Project
 #
-#   loaduse.s: An example of load-use hazard
+#   forward.s: An example of data forwarding
 #
 #   Jin-Soo Kim
 #   Systems Software and Architecture Laboratory
@@ -12,22 +12,22 @@
 #==========================================================================
 
 
-# The following program has a load-use hazard.
-# After completing the execution, the x31 register should have the 
-# value of 1.
+# The following program has several situations that require data forwarding.
+# After successful completion, the x31 register should have the 
+# value of 9.
 
     .text
     .align  2
     .globl  _start
 _start:                         # code entry point
-    lui     t0, 0x80010
-    li      x31, 3
-    sw      x31, 0(t0)
-    addi    x31, x31, 10
-    lw      x31, 0(t0)
-    addi    x31, x31, -1
-    addi    x31, x31, -2
+    li      x31, 0
+    li      t0, 1
+    li      t1, 2
+    li      t2, 3
+    add     x31, x31, t2
+    add     x31, x31, t2
+    add     x31, x31, t1
+    add     x31, x31, t0
     ebreak
-    
 
 

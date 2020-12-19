@@ -2,7 +2,7 @@
 #
 #   The PyRISC Project
 #
-#   loaduse.s: An example of load-use hazard
+#   sum100.s: Calculates the sum of integers from 1 to 100
 #
 #   Jin-Soo Kim
 #   Systems Software and Architecture Laboratory
@@ -12,22 +12,19 @@
 #==========================================================================
 
 
-# The following program has a load-use hazard.
-# After completing the execution, the x31 register should have the 
-# value of 1.
+# This program computes the sum of integers from 1 to 100.
+# The x31 register should have the value of 5050 (= 0x13ba) at the end.
 
     .text
     .align  2
     .globl  _start
 _start:                         # code entry point
-    lui     t0, 0x80010
-    li      x31, 3
-    sw      x31, 0(t0)
-    addi    x31, x31, 10
-    lw      x31, 0(t0)
-    addi    x31, x31, -1
-    addi    x31, x31, -2
+    li      t0, 1
+    li      t1, 100
+    li      x31, 0
+Loop:
+    add     x31, x31, t0
+    addi    t0, t0, 1
+    ble     t0, t1, Loop
     ebreak
-    
-
 

@@ -5,14 +5,16 @@ branch:     file format elf32-littleriscv
 Disassembly of section .text:
 
 80000000 <_start>:
-80000000:	00100293          	li	t0,1
-80000004:	00200313          	li	t1,2
-80000008:	00000f93          	li	t6,0
-8000000c:	00629663          	bne	t0,t1,80000018 <Exit>
-80000010:	001f8f93          	addi	t6,t6,1
-80000014:	002f8f93          	addi	t6,t6,2
+80000000:	00100093          	li	ra,1
+80000004:	00100113          	li	sp,1
+80000008:	02209063          	bne	ra,sp,80000028 <Exit>
+8000000c:	000000b3          	add	ra,zero,zero
+80000010:	000000b3          	add	ra,zero,zero
+80000014:	000000b3          	add	ra,zero,zero
+80000018:	000000b3          	add	ra,zero,zero
+8000001c:	002080b3          	add	ra,ra,sp
+80000020:	003100b3          	add	ra,sp,gp
+80000024:	003080b3          	add	ra,ra,gp
 
-80000018 <Exit>:
-80000018:	004f8f93          	addi	t6,t6,4
-8000001c:	008f8f93          	addi	t6,t6,8
-80000020:	00100073          	ebreak
+80000028 <Exit>:
+80000028:	00100073          	ebreak
